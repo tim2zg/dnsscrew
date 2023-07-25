@@ -10,10 +10,13 @@ import (
 	"strings"
 )
 
+var upstreamDnsServer string
+
 func main() {
 	// Load the IP ranges
 	loadIPRanges()
 	serveUDPDNSServer()
+	upstreamDnsServer = os.Getenv("UPSTREAM_DNS_SERVER")
 }
 
 func serveUDPDNSServer() {
@@ -157,7 +160,7 @@ func queryDNS(clientPackage gopacket.Packet) gopacket.Packet {
 	clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Questions[0].Type = layers.DNSTypeA
 
 	// making new connection to the upstream dns
-	conn, err := net.Dial("udp", "10.0.1.1:53")
+	conn, err := net.Dial("udp", upstreamDnsServer+":53")
 	if err != nil {
 		fmt.Println("error dialing:", err)
 		return nil
@@ -202,7 +205,7 @@ func queryDNS(clientPackage gopacket.Packet) gopacket.Packet {
 
 func makeProxyDownstream(buf []byte, addr net.Addr) (string, []net.IP, []net.IP, [][]byte, gopacket.Packet, int, error) {
 	// Create a connection a DNS Server
-	conn, err := net.Dial("udp", "10.0.1.1:53")
+	conn, err := net.Dial("udp", upstreamDnsServer+":53")
 	if err != nil {
 		fmt.Println("error dialing:", err)
 		return "", nil, nil, nil, nil, 0, err
