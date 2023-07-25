@@ -20,7 +20,7 @@ WORKDIR /app
 COPY --from=build /app/dnsScrew /app/
 COPY cloudfront.json .
 
-EXPOSE 52
+EXPOSE 53
 ENV UPSTREAM_DNS_SERVER=2620:fe::fe
 
 CMD ./dnsScrew
