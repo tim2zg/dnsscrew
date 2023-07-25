@@ -21,6 +21,6 @@ COPY --from=build /app/dnsScrew /app/
 COPY cloudfront.json .
 
 EXPOSE 52
-ENV UPSTREAM_DNS_SERVER=9.9.9.9
+ENV UPSTREAM_DNS_SERVER=2620:fe::fe
 
 CMD ./dnsScrew
