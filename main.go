@@ -17,11 +17,10 @@ func main() {
 	loadIPRanges()
 	fmt.Println("Starting DNS server on port 53")
 	upstreamDnsServer = "2620:fe::fe"
-	fmt.Println("Using upstream DNS server: " + upstreamDnsServer)
 	if os.Getenv("UPSTREAM_DNS_SERVER") != "" {
-		fmt.Println(os.Getenv("UPSTREAM_DNS_SERVER"))
 		upstreamDnsServer = os.Getenv("UPSTREAM_DNS_SERVER")
 	}
+	fmt.Println("Using upstream DNS server: " + upstreamDnsServer)
 	serveUDPDNSServer()
 }
 
