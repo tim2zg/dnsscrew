@@ -16,6 +16,7 @@ func main() {
 	// Load the IP ranges
 	loadIPRanges()
 	serveUDPDNSServer()
+	upstreamDnsServer = "9.9.9.9"
 	upstreamDnsServer = os.Getenv("UPSTREAM_DNS_SERVER")
 	fmt.Println("Starting DNS server on port 53")
 	fmt.Println("Using upstream DNS server: " + upstreamDnsServer)
