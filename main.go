@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -11,17 +12,40 @@ import (
 )
 
 var upstreamDnsServer string
+var blackList []string
 
 func main() {
 	// Load the IP ranges
 	loadIPRanges()
 	fmt.Println("Starting DNS server on port 53")
+	// load blacklist
+	loadBlacklist()
 	upstreamDnsServer = "2620:fe::fe"
 	if os.Getenv("UPSTREAM_DNS_SERVER") != "" {
 		upstreamDnsServer = os.Getenv("UPSTREAM_DNS_SERVER")
 	}
 	fmt.Println("Using upstream DNS server: " + upstreamDnsServer)
 	serveUDPDNSServer()
+}
+
+func loadBlacklist() {
+	// open blacklist file
+	file, err := os.Open("blacklist.txt")
+	if err != nil {
+		fmt.Println("Error opening blacklist file")
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(file)
+
+	// read line by line
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		blackList = append(blackList, scanner.Text())
+	}
 }
 
 func serveUDPDNSServer() {
@@ -129,11 +153,14 @@ func beFunnyWithIPv6(questionPacket gopacket.Packet, emptyIPv6response gopacket.
 		CNAMERecord = append(CNAMERecord, upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers[len(upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers)-1].Name)
 	}
 
+	// check for Blacklist
+	blackList := checkForBlacklist(questionPacket)
+
 	// detect CDN
 	cdn := checkForCANEfficient(ARecord, CNAMERecord)
 	fmt.Println("Detected: " + cdn)
 
-	if cdn != "" {
+	if cdn != "" && !blackList {
 		// Modify the response
 		returnPacket := modifyResponse(questionPacket, upstreamPackage, cdn, ARecord, CNAMERecord)
 
@@ -158,6 +185,17 @@ func beFunnyWithIPv6(questionPacket gopacket.Packet, emptyIPv6response gopacket.
 			return
 		}
 	}
+}
+
+func checkForBlacklist(packet gopacket.Packet) bool {
+	questionName := string(packet.Layer(layers.LayerTypeDNS).(*layers.DNS).Questions[0].Name)
+
+	for _, blacklisted := range blackList {
+		if strings.Contains(questionName, blacklisted) {
+			return true
+		}
+	}
+	return false
 }
 
 func queryDNS(clientPackage gopacket.Packet) gopacket.Packet {
