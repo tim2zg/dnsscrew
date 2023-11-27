@@ -16,7 +16,7 @@ func main() {
 	// Load the IP ranges
 	loadIPRanges()
 	fmt.Println("Starting DNS server on port 53")
-	upstreamDnsServer = "2620:fe::fe"
+	upstreamDnsServer = "9.9.9.9"
 	if os.Getenv("UPSTREAM_DNS_SERVER") != "" {
 		upstreamDnsServer = os.Getenv("UPSTREAM_DNS_SERVER")
 	}
@@ -66,7 +66,7 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 		if dns.Questions[0].Type == layers.DNSTypeA {
 			// make upstream request for A record
 			askUpstreamProxy(buf, addr, pc)
-
+			fmt.Println("Unsupported DNS record type" + dns.Questions[0].Type.String())
 		} else if dns.Questions[0].Type == layers.DNSTypeAAAA {
 			// make an upstream request for AAAA record
 			_, _, AAAARecord, _, upStreamPacket, n, err := makeProxyDownstream(buf, addr)
@@ -83,9 +83,11 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 					return
 				}
 			}
+			fmt.Println("Unsupported DNS record type" + dns.Questions[0].Type.String())
 		} else {
 			// Make proxy request upstream for other record
 			askUpstreamProxy(buf, addr, pc)
+			fmt.Println("Unsupported DNS record type")
 		}
 	}
 	return
