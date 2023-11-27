@@ -55,6 +55,9 @@ func serveUDPDNSServer() {
 }
 
 func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
+	fmt.Println("------------------")
+	fmt.Println("Received request from ", addr)
+
 	// Parse the request
 	clientPacket := gopacket.NewPacket(buf, layers.LayerTypeDNS, gopacket.Default)
 
@@ -64,16 +67,21 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 
 		// Check if ipv4 or ipv6 is requested
 		if dns.Questions[0].Type == layers.DNSTypeA {
+			fmt.Println("Making upstream request for A record")
 			// make upstream request for A record
 			askUpstreamProxy(buf, addr, pc)
 		} else if dns.Questions[0].Type == layers.DNSTypeAAAA {
+			fmt.Println("Making upstream request for AAAA record")
+
 			// make an upstream request for AAAA record
 			_, _, AAAARecord, _, upStreamPacket, n, err := makeProxyDownstream(buf, addr)
 			if err != nil {
 				fmt.Println("error making proxy downstream:", err)
 				return
 			}
+
 			if len(AAAARecord) == 0 {
+
 				beFunnyWithIPv6(clientPacket, upStreamPacket, pc, n, addr)
 			} else {
 				// Pass down from proxy
@@ -82,12 +90,12 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 					return
 				}
 			}
-			fmt.Println("Unsupported DNS record type" + dns.Questions[0].Type.String())
 		} else {
 			// Make proxy request upstream for other record
 			askUpstreamProxy(buf, addr, pc)
-			fmt.Println("Unsupported DNS record type")
 		}
+	} else {
+		fmt.Println("Error parsing DNS packet")
 	}
 	return
 }
@@ -99,6 +107,7 @@ func askUpstreamProxy(buf []byte, addr net.Addr, pc net.PacketConn) {
 		fmt.Println("error making proxy downstream:", err)
 		return
 	}
+
 	// Pass down from proxy
 	if _, err := pc.WriteTo(upStreamPacket.Data()[:n], addr); err != nil {
 		fmt.Println("error writing:", err)
@@ -137,8 +146,23 @@ func beFunnyWithIPv6(questionPacket gopacket.Packet, emptyIPv6response gopacket.
 	fmt.Println("Detected: " + cdn)
 
 	if cdn != "" {
+		// get the ip address
+		ip := modifyResponse(upstreamPackage, cdn, ARecord, CNAMERecord)
+
 		// Modify the response
-		returnPacket := modifyResponse(questionPacket, upstreamPackage, cdn, ARecord, CNAMERecord)
+		returnPacket := questionPacket
+		var dnsAnswer layers.DNSResourceRecord
+		dnsAnswer.Type = layers.DNSTypeAAAA
+		dnsAnswer.IP = ip
+		dnsAnswer.Name = questionPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).Questions[0].Name
+		dnsAnswer.Class = layers.DNSClassIN
+		dnsAnswer.TTL = 300
+		returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).QR = true
+		returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
+		returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).OpCode = layers.DNSOpCodeQuery
+		returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).AA = true
+		returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, dnsAnswer)
+		returnPacket.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = layers.DNSResponseCodeNoErr
 
 		// Send the response back to the client
 		// create new packet to send back to client
@@ -163,9 +187,10 @@ func beFunnyWithIPv6(questionPacket gopacket.Packet, emptyIPv6response gopacket.
 	}
 }
 
-func queryDNS(clientPackage gopacket.Packet) gopacket.Packet {
+func queryDNS(original gopacket.Packet) gopacket.Packet {
 	// change request from ipv6 to ipv4
-	clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Questions[0].Type = layers.DNSTypeA
+
+	original.Layer(layers.LayerTypeDNS).(*layers.DNS).Questions[0].Type = layers.DNSTypeA
 
 	// making new connection to the upstream dns
 	address := upstreamDnsServer + ":53"
@@ -187,7 +212,7 @@ func queryDNS(clientPackage gopacket.Packet) gopacket.Packet {
 	moddedPacketData := gopacket.NewSerializeBuffer()
 
 	// serializing new package to buffer
-	err4 := clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).SerializeTo(moddedPacketData, gopacket.SerializeOptions{})
+	err4 := original.Layer(layers.LayerTypeDNS).(*layers.DNS).SerializeTo(moddedPacketData, gopacket.SerializeOptions{})
 	if err4 != nil {
 		return nil
 	}
@@ -209,6 +234,8 @@ func queryDNS(clientPackage gopacket.Packet) gopacket.Packet {
 	// parsing response into upstream package
 	upstreamPackage := gopacket.NewPacket(resp[:n], layers.LayerTypeDNS, gopacket.Default)
 
+	original.Layer(layers.LayerTypeDNS).(*layers.DNS).Questions[0].Type = layers.DNSTypeAAAA
+
 	return upstreamPackage
 }
 
@@ -227,7 +254,7 @@ func makeProxyDownstream(buf []byte, addr net.Addr) (string, []net.IP, []net.IP,
 		}
 	}(conn)
 
-	// Send the request to Google's DNS server
+	// Send the request to a DNS server
 	if _, err := conn.Write(buf); err != nil {
 		fmt.Println("error writing:", err)
 		return "", nil, nil, nil, nil, 0, err
@@ -257,12 +284,6 @@ func checkDNSPacket(resp []byte, n int, addr net.Addr) (string, []net.IP, []net.
 	if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
 		dns, _ := dnsLayer.(*layers.DNS)
 
-		// Get the domain
-		var record = "No Record Found"
-		if len(dns.Answers) > 0 {
-			record = dns.Answers[len(dns.Answers)-1].IP.String()
-		}
-
 		// Get the record
 		var domain = "No Domain Found"
 		if len(dns.Questions) > 0 {
@@ -284,14 +305,13 @@ func checkDNSPacket(resp []byte, n int, addr net.Addr) (string, []net.IP, []net.
 				CNAMERecord = append(CNAMERecord, answer.CNAME)
 			}
 		}
-		fmt.Println("Received request from ", addr, ": ", domain, " -> ", record)
 		domain = string(dns.Questions[0].Name)
 		return domain, ARecord, AAAARecord, CNAMERecord, packet, nil
 	}
 	return "", nil, nil, nil, nil, nil
 }
 
-func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet, cdn string, ARecord []net.IP, CNAMERecord [][]byte) gopacket.Packet {
+func modifyResponse(serverPackage gopacket.Packet, cdn string, ARecord []net.IP, CNAMERecord [][]byte) net.IP {
 	dns := serverPackage.Layer(layers.LayerTypeDNS).(*layers.DNS)
 
 	switch cdn {
@@ -302,10 +322,8 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 		var stripling []string
 		var ipAddressInt []int
 
-		tld := uint32(60)
 		if len(dns.Answers) > 0 {
 			stripling = strings.Split(dns.Answers[len(dns.Answers)-1].IP.String(), ".")
-			tld = dns.Answers[len(dns.Answers)-1].TTL
 		}
 
 		for _, ipAddress := range stripling {
@@ -322,38 +340,12 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 			ip = ip + strconv.Itoa((ipAddressInt[2]%64)*256+(ipAddressInt[3]*1))
 		}
 
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP(ip),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP(ip)
 
 	case "cloudflare":
 		// Cloudflare
 		fmt.Println("Modifying response for Cloudflare")
-
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP("2606:4700:7::a29f:9804"),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP("2606:4700:7::a29f:9804")
 
 	case "akamai":
 		fmt.Println("Modifying for Akamai")
@@ -372,85 +364,24 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 				}
 			}
 
-			tld := uint32(60)
-			if len(dns.Answers) > 0 {
-				tld = dns.Answers[len(dns.Answers)-1].TTL
-			}
-
-			// Add the IPv6 address to the response
-			clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-				Name:  dns.Questions[0].Name,
-				Type:  layers.DNSTypeAAAA,
-				Class: layers.DNSClassIN,
-				IP:    validAAAA,
-				TTL:   tld,
-			})
-
-			clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-			clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+			return validAAAA
 		} else {
-			fmt.Println("Error")
+			return nil
 		}
 
 	case "cloudfront":
 		// Cloudflare
 		fmt.Println("Modifying response for CloudFront")
-
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP("2600:9000:25a2:1600:c:132:48e:f021"),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP("2600:9000:25a2:1600:c:132:48e:f021")
 
 	case "bunnycdn":
 		//2400:52e0:1e00::722:1
 		fmt.Println("Modifying response for Bunny")
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP("2400:52e0:1e00::722:1"),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP("2400:52e0:1e00::722:1")
 
 	case "highwinds":
 		fmt.Println("Modifying response for Stackpath")
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP("2001:4de0:ac18::1:a:1a"),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP("2001:4de0:ac18::1:a:1a")
 
 	case "msedge":
 		fmt.Println("Modifying for MS edge")
@@ -460,10 +391,8 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 		var stripling []string
 		var ipAddressInt []int
 
-		tld := uint32(60)
 		if len(dns.Answers) > 0 {
 			stripling = strings.Split(dns.Answers[len(dns.Answers)-1].IP.String(), ".")
-			tld = dns.Answers[len(dns.Answers)-1].TTL
 		}
 
 		for _, ipAddress := range stripling {
@@ -503,17 +432,7 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 			IPRange = IPRange + strconv.Itoa(ipAddressInt[3])
 		}
 
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP(IPRange),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP(IPRange)
 
 	case "azureedge":
 		fmt.Println("Modifying for Azure edge")
@@ -533,45 +452,14 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 				}
 			}
 
-			tld := uint32(60)
-			if len(dns.Answers) > 0 {
-				tld = dns.Answers[len(dns.Answers)-1].TTL
-			}
-
-			// Add the IPv6 address to the response
-			clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-				Name:  dns.Questions[0].Name,
-				Type:  layers.DNSTypeAAAA,
-				Class: layers.DNSClassIN,
-				IP:    validAAAA,
-				TTL:   tld,
-			})
-
-			clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-			clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+			return validAAAA
 		}
 
 	case "sucuri":
 		//2a02:fe80:1010::21
 		// Sucuri
 		fmt.Println("Modifying response for Sucuri")
-
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP("2a02:fe80:1010::21"),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP("2a02:fe80:1010::21")
 
 	case "github":
 		// Fastly GH
@@ -580,10 +468,8 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 		var stripling []string
 		var ipAddressInt []int
 
-		tld := uint32(60)
 		if len(dns.Answers) > 0 {
 			stripling = strings.Split(dns.Answers[len(dns.Answers)-1].IP.String(), ".")
-			tld = dns.Answers[len(dns.Answers)-1].TTL
 		}
 
 		for _, ipAddress := range stripling {
@@ -596,37 +482,12 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 
 		ip = ip + strconv.Itoa(ipAddressInt[3])
 
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP(ip),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP(ip)
 
 	case "edge":
 		//edge
 		fmt.Println("Modifying response for Edge")
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    net.ParseIP("2606:2800:133:672:1e5f:2264:1854:1189"),
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return net.ParseIP("2606:2800:133:672:1e5f:2264:1854:1189")
 
 	case "s3":
 		lastCNAME := CNAMERecord[1]
@@ -644,25 +505,10 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 			}
 		}
 
-		tld := uint32(60)
-		if len(dns.Answers) > 0 {
-			tld = dns.Answers[len(dns.Answers)-1].TTL
-		}
-
-		// Add the IPv6 address to the response
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers = append(clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers, layers.DNSResourceRecord{
-			Name:  dns.Questions[0].Name,
-			Type:  layers.DNSTypeAAAA,
-			Class: layers.DNSClassIN,
-			IP:    validAAAA,
-			TTL:   tld,
-		})
-
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ANCount = 1
-		clientPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).ResponseCode = 0
+		return validAAAA
 
 	}
-	return clientPackage
+	return nil
 }
 
 func checkForCANEfficient(ARecords []net.IP, CNAMERecords [][]byte) string {
