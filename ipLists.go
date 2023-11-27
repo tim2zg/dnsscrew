@@ -138,6 +138,7 @@ func loadIPRanges() {
 	_, range40, _ := net.ParseCIDR("104.24.0.0/14")
 	_, range41, _ := net.ParseCIDR("172.64.0.0/13")
 	_, range42, _ := net.ParseCIDR("131.0.72.0/22")
+	_, range44, _ := net.ParseCIDR("23.227.38.0/23")
 
 	cloudflare = append(cloudflare, range28)
 	cloudflare = append(cloudflare, range29)
@@ -154,6 +155,7 @@ func loadIPRanges() {
 	cloudflare = append(cloudflare, range40)
 	cloudflare = append(cloudflare, range41)
 	cloudflare = append(cloudflare, range42)
+	cloudflare = append(cloudflare, range44)
 
 	fmt.Println("Finished loading IP ranges")
 }

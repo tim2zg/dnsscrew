@@ -16,7 +16,7 @@ func main() {
 	// Load the IP ranges
 	loadIPRanges()
 	fmt.Println("Starting DNS server on port 53")
-	upstreamDnsServer = "9.9.9.9"
+	upstreamDnsServer = "10.0.1.1"
 	if os.Getenv("UPSTREAM_DNS_SERVER") != "" {
 		upstreamDnsServer = os.Getenv("UPSTREAM_DNS_SERVER")
 	}
@@ -66,7 +66,6 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 		if dns.Questions[0].Type == layers.DNSTypeA {
 			// make upstream request for A record
 			askUpstreamProxy(buf, addr, pc)
-			fmt.Println("Unsupported DNS record type" + dns.Questions[0].Type.String())
 		} else if dns.Questions[0].Type == layers.DNSTypeAAAA {
 			// make an upstream request for AAAA record
 			_, _, AAAARecord, _, upStreamPacket, n, err := makeProxyDownstream(buf, addr)
@@ -130,6 +129,8 @@ func beFunnyWithIPv6(questionPacket gopacket.Packet, emptyIPv6response gopacket.
 	if len(upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers) > 0 {
 		CNAMERecord = append(CNAMERecord, upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers[len(upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers)-1].Name)
 	}
+
+	fmt.Println("A record: " + ARecord[0].String())
 
 	// detect CDN
 	cdn := checkForCANEfficient(ARecord, CNAMERecord)
@@ -232,7 +233,7 @@ func makeProxyDownstream(buf []byte, addr net.Addr) (string, []net.IP, []net.IP,
 		return "", nil, nil, nil, nil, 0, err
 	}
 
-	// Read the response from Google's DNS server
+	// Read the response from DNS server
 	resp := make([]byte, 4096)
 	n, err := conn.Read(resp)
 	if err != nil {
@@ -815,7 +816,7 @@ func checkForFastly(ip net.IP) bool {
 
 func checkForCloudFlare(ip net.IP) bool {
 	// CloudFlare IP ranges
-	if cloudflare[0].Contains(ip) || cloudflare[1].Contains(ip) || cloudflare[2].Contains(ip) || cloudflare[3].Contains(ip) || cloudflare[4].Contains(ip) || cloudflare[5].Contains(ip) || cloudflare[6].Contains(ip) || cloudflare[7].Contains(ip) || cloudflare[8].Contains(ip) || cloudflare[9].Contains(ip) || cloudflare[10].Contains(ip) || cloudflare[11].Contains(ip) || cloudflare[12].Contains(ip) || cloudflare[13].Contains(ip) || cloudflare[14].Contains(ip) {
+	if cloudflare[0].Contains(ip) || cloudflare[1].Contains(ip) || cloudflare[2].Contains(ip) || cloudflare[3].Contains(ip) || cloudflare[4].Contains(ip) || cloudflare[5].Contains(ip) || cloudflare[6].Contains(ip) || cloudflare[7].Contains(ip) || cloudflare[8].Contains(ip) || cloudflare[9].Contains(ip) || cloudflare[10].Contains(ip) || cloudflare[11].Contains(ip) || cloudflare[12].Contains(ip) || cloudflare[13].Contains(ip) || cloudflare[14].Contains(ip) || cloudflare[15].Contains(ip) {
 		return true
 	} else {
 		return false
