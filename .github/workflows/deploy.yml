@@ -26,5 +26,5 @@ jobs:
           go build -o myapp
       - name: move binary
         run: |
-            mv myapp /root/deploy
+            mv myapp /home/ghrunner/deploy
       - run: echo "🍏 This job's status is ${{ job.status }}."
