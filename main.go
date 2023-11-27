@@ -495,6 +495,8 @@ func modifyResponse(clientPackage gopacket.Packet, serverPackage gopacket.Packet
 			if ipAddressInt[3] == 9 {
 				ipAddressInt[3] = 8
 			}
+		default:
+			IPRange = "2620:1ec:21::"
 		}
 
 		if len(ARecord) == 1 {
