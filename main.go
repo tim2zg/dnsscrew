@@ -707,7 +707,10 @@ func checkForCANEfficient(ARecords []net.IP, CNAMERecords [][]byte) string {
 				return "github"
 			}
 			if checkForEdge(ip) {
-				return ""
+				return "edge"
+			}
+			if checkForMsEdgeIP(ip) {
+				return "msedge"
 			}
 		}
 	} else {
@@ -744,6 +747,14 @@ func checkForAzureEdge(cname []byte) bool {
 
 func checkForMsEdge(cname []byte) bool {
 	if strings.Contains(string(cname), "msedge.net") {
+		return true
+	} else {
+		return false
+	}
+}
+
+func checkForMsEdgeIP(ip net.IP) bool {
+	if msedge[0].Contains(ip) {
 		return true
 	} else {
 		return false

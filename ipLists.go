@@ -29,6 +29,7 @@ var cloudFront []*net.IPNet
 var fastly []*net.IPNet
 var cloudflare []*net.IPNet
 var edgeIo []*net.IPNet
+var msedge []*net.IPNet
 
 func loadIPRanges() {
 	// Load the IP ranges
@@ -156,6 +157,10 @@ func loadIPRanges() {
 	cloudflare = append(cloudflare, range41)
 	cloudflare = append(cloudflare, range42)
 	cloudflare = append(cloudflare, range44)
+
+	_, range45, _ := net.ParseCIDR("204.79.197.0/24")
+
+	msedge = append(msedge, range45)
 
 	fmt.Println("Finished loading IP ranges")
 }
