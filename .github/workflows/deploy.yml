@@ -24,4 +24,7 @@ jobs:
       - name: build
         run: |
           go build -o myapp
+      - name: move binary
+        run: |
+            mv myapp /root/deploy
       - run: echo "🍏 This job's status is ${{ job.status }}."
