@@ -29,5 +29,5 @@ jobs:
             mv myapp /home/ghrunner/deploy
       - name: deploy
         run: |
-          /bin/systemctl restart dnsscrew.service
+          sudo /bin/systemctl restart dnsscrew.service
       - run: echo "🍏 This job's status is ${{ job.status }}."
