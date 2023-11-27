@@ -27,9 +27,6 @@ jobs:
       - name: move binary
         run: |
             mv myapp /home/ghrunner/deploy
-      - name: stopping service
-        run: |
-          sudo /bin/systemctl stop dnsscrew.service
       - name: move static files
         run: |
             mv cloudfront.json /home/ghrunner/deploy
