@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -351,24 +352,16 @@ func modifyResponse(serverPackage gopacket.Packet, cdn string, ARecord []net.IP,
 		fmt.Println("Modifying for Akamai")
 		lastCNAME := CNAMERecord[len(CNAMERecord)-1]
 		split := strings.Split(string(lastCNAME), ".")
-		var validAAAA net.IP
-		if split[2] == "akamaiedge" && split[3] == "net" {
-			split[1] = "dsc" + split[1]
-			ips, err := net.LookupIP(split[0] + "." + split[1] + "." + split[2] + "." + split[3])
-			if err != nil {
-				fmt.Println("could not look up ip")
-			}
-			for _, ip := range ips {
-				if strings.Contains(ip.String(), ":") {
-					validAAAA = ip
-				}
-			}
+		fmt.Println(split)
 
-			return validAAAA
-		} else {
-			return nil
+		fmt.Println(split[0] + ".dsc" + split[1] + "." + split[2] + "." + split[3])
+		ips, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip6", split[0]+".dsc"+split[1]+"."+split[2]+"."+split[3])
+		if err != nil {
+			fmt.Println("could not look up ip")
+			return net.ParseIP("")
 		}
-
+		fmt.Println(ips)
+		return net.ParseIP(ips[0].String())
 	case "cloudfront":
 		// Cloudflare
 		fmt.Println("Modifying response for CloudFront")
@@ -513,21 +506,19 @@ func modifyResponse(serverPackage gopacket.Packet, cdn string, ARecord []net.IP,
 
 func checkForCANEfficient(ARecords []net.IP, CNAMERecords [][]byte) string {
 	if len(ARecords) > 0 {
-		for _, cname := range CNAMERecords {
-			if checkForS3(cname) {
-				return "s3"
-			}
-			if checkForMsEdge(cname) {
-				return "msedge"
-			}
+		// get the last cname
+		lastcname := CNAMERecords[len(CNAMERecords)-1]
+		if checkForAzureEdge(lastcname) {
+			return "azureedge"
 		}
-		for _, cname := range CNAMERecords {
-			if checkForAzureEdge(cname) {
-				return "azureedge"
-			}
-			if checkForAkamai(cname) {
-				return "akamai"
-			}
+		if checkForAkamai(lastcname) {
+			return "akamai"
+		}
+		if checkForS3(lastcname) {
+			return "s3"
+		}
+		if checkForMsEdge(lastcname) {
+			return "msedge"
 		}
 
 		for _, ip := range ARecords {
@@ -556,6 +547,20 @@ func checkForCANEfficient(ARecords []net.IP, CNAMERecords [][]byte) string {
 				return "edge"
 			}
 			if checkForMsEdgeIP(ip) {
+				return "msedge"
+			}
+		}
+		for _, cname := range CNAMERecords {
+			if checkForAzureEdge(cname) {
+				return "azureedge"
+			}
+			if checkForAkamai(cname) {
+				return "akamai"
+			}
+			if checkForS3(cname) {
+				return "s3"
+			}
+			if checkForMsEdge(cname) {
 				return "msedge"
 			}
 		}
