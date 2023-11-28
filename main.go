@@ -89,6 +89,8 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 					} else {
 						beFunnyWithIPv6(clientPacket, upStreamPacket, pc, n, addr)
 					}
+				} else {
+					beFunnyWithIPv6(clientPacket, upStreamPacket, pc, n, addr)
 				}
 			} else {
 				// Pass down from proxy
