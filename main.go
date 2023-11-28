@@ -69,11 +69,12 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 		// Check if ipv4 or ipv6 is requested
 		if dns.Questions[0].Type == layers.DNSTypeA {
 			fmt.Println("Making upstream request for A record")
+			fmt.Println("Domain: " + string(dns.Questions[0].Name))
 			// make upstream request for A record
 			askUpstreamProxy(buf, addr, pc)
 		} else if dns.Questions[0].Type == layers.DNSTypeAAAA {
 			fmt.Println("Making upstream request for AAAA record")
-
+			fmt.Println("Domain: " + string(dns.Questions[0].Name))
 			// make an upstream request for AAAA record
 			_, ARecord, AAAARecord, _, upStreamPacket, n, err := makeProxyDownstream(buf, addr)
 			if err != nil {
