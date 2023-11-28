@@ -352,16 +352,13 @@ func modifyResponse(serverPackage gopacket.Packet, cdn string, ARecord []net.IP,
 		fmt.Println("Modifying for Akamai")
 		lastCNAME := CNAMERecord[len(CNAMERecord)-1]
 		split := strings.Split(string(lastCNAME), ".")
-		fmt.Println(split)
-
-		fmt.Println(split[0] + ".dsc" + split[1] + "." + split[2] + "." + split[3])
 		ips, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip6", split[0]+".dsc"+split[1]+"."+split[2]+"."+split[3])
 		if err != nil {
 			fmt.Println("could not look up ip")
 			return net.ParseIP("")
 		}
-		fmt.Println(ips)
 		return net.ParseIP(ips[0].String())
+
 	case "cloudfront":
 		// Cloudflare
 		fmt.Println("Modifying response for CloudFront")
