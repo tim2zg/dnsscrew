@@ -75,15 +75,20 @@ func handleRequest(pc net.PacketConn, addr net.Addr, buf []byte) {
 			fmt.Println("Making upstream request for AAAA record")
 
 			// make an upstream request for AAAA record
-			_, _, AAAARecord, _, upStreamPacket, n, err := makeProxyDownstream(buf, addr)
+			_, ARecord, AAAARecord, _, upStreamPacket, n, err := makeProxyDownstream(buf, addr)
 			if err != nil {
 				fmt.Println("error making proxy downstream:", err)
 				return
 			}
 
 			if len(AAAARecord) == 0 {
-
-				beFunnyWithIPv6(clientPacket, upStreamPacket, pc, n, addr)
+				if ARecord != nil {
+					if ARecord[0].Equal(net.ParseIP("10.10.10.1")) {
+						fmt.Println("IPv4 address is Blackholed")
+					} else {
+						beFunnyWithIPv6(clientPacket, upStreamPacket, pc, n, addr)
+					}
+				}
 			} else {
 				// Pass down from proxy
 				if _, err := pc.WriteTo(upStreamPacket.Data()[:n], addr); err != nil {
