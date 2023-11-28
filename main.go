@@ -44,7 +44,7 @@ func serveUDPDNSServer() {
 	// Main receiving loop
 	for {
 		// Read request
-		buf := make([]byte, 4096)
+		buf := make([]byte, 1024)
 		n, addr, err := pc.ReadFrom(buf)
 		if err != nil {
 			fmt.Println("error reading:", err)
