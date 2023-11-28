@@ -146,8 +146,6 @@ func beFunnyWithIPv6(questionPacket gopacket.Packet, emptyIPv6response gopacket.
 		CNAMERecord = append(CNAMERecord, upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers[len(upstreamPackage.Layer(layers.LayerTypeDNS).(*layers.DNS).Answers)-1].Name)
 	}
 
-	fmt.Println("A record: " + ARecord[0].String())
-
 	// detect CDN
 	cdn := checkForCANEfficient(ARecord, CNAMERecord)
 	fmt.Println("Detected: " + cdn)
